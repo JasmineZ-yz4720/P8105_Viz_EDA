@@ -8,4 +8,214 @@ output: html_document
 ```{r setup}
 library(tidyverse)
 library(ggridges)
+library(patchwork)
 ```
+
+```{r}
+weather_df = 
+  rnoaa::meteo_pull_monitors(
+    c("USW00094728", "USW00022534", "USS0023B17S"),
+    var = c("PRCP", "TMIN", "TMAX"), 
+    date_min = "2021-01-01",
+    date_max = "2022-12-31") |>
+  mutate(
+    name = recode(
+      id, 
+      USW00094728 = "CentralPark_NY", 
+      USW00022534 = "Molokai_HI",
+      USS0023B17S = "Waterhole_WA"),
+    tmin = tmin / 10,
+    tmax = tmax / 10) |>
+  select(name, id, everything())
+```
+
+This result in a dataframe with `r nrow(weather_df)` obs on six variables.
+
+# Basic plot
+```{r}
+weather_df |> 
+  ggplot(aes(x=tmin, y=tmax, color = name)) +
+  geom_point(alpha=0.5) +
+  labs(
+    title = "Temp plot",
+    x = "Min daily temp in C",
+    y = "Max daily temp in C",
+    color = "location", #title of the labels
+    caption = "Max vs. Min daily temp in three locations"
+  )
+```
+# Various scales: modify the default mapping between variable and aesthetics 
+```{r}
+weather_df |> 
+  ggplot(aes(x=tmin, y=tmax, color = name)) +
+  geom_point(alpha=0.5) +
+  labs(
+    title = "Temp plot",
+    x = "Min daily temp in C",
+    y = "Max daily temp in C",
+    color = "location", #title of the labels
+    caption = "Max vs. Min daily temp in three locations"
+  ) + 
+  scale_x_continuous(
+    breaks = c(-15, 0, 15),
+    labels = c("-15 C", "0", "15 C")
+  ) +
+  scale_y_continuous(
+    position = "right",
+    #trans = "sqrt" transform the variable on axis
+    limits = c(0, 30)
+  )
+```
+## color schemes
+```{r}
+weather_df |> 
+  ggplot(aes(x=tmin, y=tmax, color = name)) +
+  geom_point(alpha=0.5) +
+  labs(
+    title = "Temp plot",
+    x = "Min daily temp in C",
+    y = "Max daily temp in C",
+    color = "location", #title of the labels
+    caption = "Max vs. Min daily temp in three locations"
+  ) + #discrete: categorical variables 
+  viridis::scale_color_viridis(discrete = TRUE)
+```
+# Themes
+```{r}
+weather_df |> 
+  ggplot(aes(x=tmin, y=tmax, color = name)) +
+  geom_point(alpha=0.5) +
+  labs(
+    title = "Temp plot",
+    x = "Min daily temp in C",
+    y = "Max daily temp in C",
+    color = "location", #title of the labels
+    caption = "Max vs. Min daily temp in three locations"
+  ) +
+  viridis::scale_color_viridis(discrete = TRUE) + 
+  theme_bw() + #change the background: overall look, global reset: order matters
+  theme(legend.position = "bottom") #labels position 
+   
+```
+
+# Data arguments
+```{r}
+weather_df |> 
+  ggplot(aes(x=date, y=tmax)) +
+  geom_point(aes(color = name)) +
+  geom_smooth()
+
+weather_df |> 
+  ggplot(aes(x=date, y=tmax, color = name)) +
+  geom_point() +
+  geom_smooth()
+
+nyc_weather_df = 
+  weather_df |> 
+  filter(name == "CentralPark_NY")
+molokai_df = 
+  weather_df |> 
+  filter(name == "Molokai_HI")
+#different dataset in different shape 
+ggplot(data = molokai_df, aes(x = date, y = tmax, color = name)) + 
+  geom_point() + 
+  geom_line(data = nyc_weather_df) 
+```
+
+# Patchwork: plots of diff types 
+```{r}
+weather_df |> 
+  ggplot(aes(x=date, y=tmax, color = name)) +
+  geom_point() +
+  facet_grid(. ~name)
+```
+```{r}
+#want differnet types of plot in diff panels 
+ggp_temp_scatter =
+  weather_df |> 
+  ggplot(aes(x=tmin, y=tmax, color=name))+
+  geom_point(alpha=0.5)+ 
+  theme(legend.position = "none")
+
+ggp_prcp_density = 
+  weather_df |> 
+  filter(prcp > 25) |> 
+  ggplot(aes(x = prcp, fill = name)) + 
+  geom_density(alpha = .5) + 
+  theme(legend.position = "none")
+#put together
+ggp_temp_scatter+ggp_prcp_density
+
+ggp_tmax_date = 
+  weather_df |> 
+  ggplot(aes(x = date, y = tmax, color = name)) + 
+  geom_point(alpha = .5) +
+  geom_smooth(se = FALSE) + 
+  theme(legend.position = "bottom")
+
+#put together
+(ggp_temp_scatter+ggp_prcp_density)/ggp_tmax_date
+```
+
+# Data manipulation
+```{r}
+#name alphabetically ordered because it is character 
+weather_df |> 
+  ggplot(aes(x = name, y = tmax))+
+  geom_boxplot()
+#relevel the name 
+weather_df |>
+  mutate(name = forcats::fct_relevel(name, c("Molokai_HI", "CentralPark_NY", "Waterhole_WA"))) |> 
+  ggplot(aes(x = name, y = tmax)) + 
+  geom_violin(aes(fill = name), color = "blue", alpha = .5) + 
+  theme(legend.position = "bottom")
+
+#put name in order according to some other variable 
+weather_df |>
+  mutate(name = forcats::fct_reorder(name, tmax)) |> #compute the avg tmax and order
+  ggplot(aes(x = name, y = tmax)) + 
+  geom_violin(aes(fill = name), color = "blue", alpha = .5) + 
+  theme(legend.position = "bottom")
+```
+
+```{r}
+litter_data = 
+  read_csv("./Data/FAS_litters.csv") |>
+  janitor::clean_names() |>
+  separate(group, into = c("dose", "day_of_tx"), sep = 3)
+pup_data = 
+  read_csv("./data/FAS_pups.csv") |>
+  janitor::clean_names() |>
+  mutate(
+    sex = 
+      case_match(
+        sex, 
+        1 ~ "male", 
+        2 ~ "female"))
+
+
+fas_data = left_join(pup_data, litter_data, by = "litter_number") 
+
+fas_tidy = fas_data |> 
+  select(dose, day_of_tx, pd_ears:pd_walk) |> 
+  pivot_longer(
+    pd_ears:pd_walk,
+    names_to = "outcome", 
+    values_to = "pn_day")
+
+fas_data |> 
+  select(dose, day_of_tx, pd_ears:pd_walk) |> 
+  pivot_longer(
+    pd_ears:pd_walk,
+    names_to = "outcome", 
+    values_to = "pn_day") |> 
+  drop_na() |> 
+  mutate(outcome = forcats::fct_reorder(outcome, pn_day, median)) |> 
+  ggplot(aes(x = dose, y = pn_day)) + 
+  geom_violin() + 
+  facet_grid(day_of_tx ~ outcome)
+```
+
+
+
+
